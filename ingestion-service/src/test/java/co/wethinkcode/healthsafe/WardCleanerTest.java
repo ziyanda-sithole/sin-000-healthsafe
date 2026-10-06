@@ -68,13 +68,47 @@ class WardCleanerTest {
     }
 
     @Test
-    void cleansEveryRowOfTheRealFile() throws IOException {
+    void mergeFillsGapsFromTheLaterRow() {
+        List<String[]> rows = List.of(
+                new String[] {"W-01", "East Wing", "", "3"},
+                new String[] {"w-01", "", "Cardiology", "3"});
+
+        Ward ward = WardCleaner.clean(rows).wards().get(0);
+
+        assertEquals("East Wing", ward.wing());
+        assertEquals("Cardiology", ward.department());
+        assertEquals(3, ward.bedsAvailable());
+        assertTrue(ward.notes().contains("merged duplicate of rows 1 and 2"));
+        assertTrue(ward.notes().stream().noneMatch(n -> n.startsWith("conflict")));
+    }
+
+    @Test
+    void mergeKeepsEarlierValueAndNotesTheConflict() {
+        List<String[]> rows = List.of(
+                new String[] {"W-02", "West Wing", "ICU", "3"},
+                new String[] {"W-02", "West Wing", "ICU", "7"});
+
+        Ward ward = WardCleaner.clean(rows).wards().get(0);
+
+        assertEquals(3, ward.bedsAvailable());
+        assertTrue(ward.notes().contains("conflict on bedsAvailable: kept '3', ignored '7'"));
+    }
+
+    @Test
+    void mergesDuplicatesInTheRealFile() throws IOException {
         try (InputStream in = getClass().getResourceAsStream("/wards-outdated.csv")) {
             WardCleaner.Result result = WardCleaner.clean(WardCsvReader.readRows(in));
 
-            // 18 rows in, 18 wards out: duplicates are NOT merged yet (next piece)
-            assertEquals(18, result.wards().size());
+            // 18 raw rows -> 17 wards: only W-05 is duplicated
+            assertEquals(17, result.wards().size());
             assertTrue(result.rejected().isEmpty());
+
+            Ward w05 = result.wards().stream()
+                    .filter(w -> w.wardId().equals("W-05"))
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals(5, w05.bedsAvailable());
+            assertTrue(w05.notes().contains("merged duplicate of rows 5 and 6"));
         }
     }
 }
