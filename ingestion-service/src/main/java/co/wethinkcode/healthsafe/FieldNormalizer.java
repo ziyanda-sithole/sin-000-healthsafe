@@ -25,6 +25,8 @@ public final class FieldNormalizer {
             "paediatrics", "Paediatrics",
             "icu", "ICU");
 
+    static final int MAX_REALISTIC_BEDS = 100;
+
     private FieldNormalizer() {
     }
 
@@ -61,6 +63,38 @@ public final class FieldNormalizer {
         }
         String lower = t.toLowerCase(Locale.ROOT);
         return DEPARTMENT_CANONICAL.getOrDefault(lower, titleCase(t));
+    }
+
+    /**
+     * Result of trying to read a bed count: either a trusted number,
+     * or null plus a human-readable reason it was rejected.
+     */
+    public record BedsResult(Integer value, String note) {
+    }
+
+    /**
+     * Only accept an integer between 0 and MAX_REALISTIC_BEDS.
+     * Anything else becomes null with a note, rather than guessing.
+     */
+    public static BedsResult parseBeds(String raw) {
+        String t = tidy(raw);
+        if (isPlaceholder(t)) {
+            return new BedsResult(null, "bedsAvailable missing ('" + t + "')");
+        }
+        int n;
+        try {
+            n = Integer.parseInt(t);
+        } catch (NumberFormatException e) {
+            return new BedsResult(null,
+                    "bedsAvailable was non-numeric ('" + t + "') - flagged for follow-up");
+        }
+        if (n < 0) {
+            return new BedsResult(null, "bedsAvailable was negative (" + n + ") - flagged for follow-up");
+        }
+        if (n > MAX_REALISTIC_BEDS) {
+            return new BedsResult(null, "bedsAvailable unrealistic (" + n + ") - flagged for follow-up");
+        }
+        return new BedsResult(n, null);
     }
 
     // "east wing" -> "East Wing".
