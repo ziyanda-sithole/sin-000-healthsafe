@@ -1,6 +1,7 @@
 package co.wethinkcode.healthsafe;
 
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -11,8 +12,18 @@ import java.util.Set;
 public final class FieldNormalizer {
 
     // Values that mean "no real value here" in the legacy export.
-    private static final Set<String> PLACEHOLDERS =
-            Set.of("", "n/a", "na", "tbd", "unknown", "-", "nan", "null");
+    private static final Set<String> PLACEHOLDERS = Set.of("", "n/a", "na", "tbd", "unknown", "-", "nan", "null");
+
+    /**
+     * Spelling variants and acronyms. Keys are lower-case.
+     * "Pediatrics" (US) and "Paediatrics" (UK) are the same department;
+     * we pick one canonical spelling so they group together.
+     * ICU is an acronym, so plain title-casing would wrongly give "Icu".
+     */
+    private static final Map<String, String> DEPARTMENT_CANONICAL = Map.of(
+            "pediatrics", "Paediatrics",
+            "paediatrics", "Paediatrics",
+            "icu", "ICU");
 
     private FieldNormalizer() {
     }
@@ -40,6 +51,16 @@ public final class FieldNormalizer {
     public static String normalizeWing(String raw) {
         String t = tidy(raw);
         return isPlaceholder(t) ? null : titleCase(t);
+    }
+
+    // "PAEDIATRICS"/"Pediatrics" -> "Paediatrics"; "icu" -> "ICU". Null if missing.
+    public static String normalizeDepartment(String raw) {
+        String t = tidy(raw);
+        if (isPlaceholder(t)) {
+            return null;
+        }
+        String lower = t.toLowerCase(Locale.ROOT);
+        return DEPARTMENT_CANONICAL.getOrDefault(lower, titleCase(t));
     }
 
     // "east wing" -> "East Wing".
