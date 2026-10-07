@@ -80,15 +80,26 @@ mvn package
 java -jar target/ingestion-service.jar
 ```
 
-Listens on port `7030`. Currently just exposes `/health` — the actual CSV
-parsing/cleaning logic is a TODO.
+Listens on port `7030`. Endpoints:
+
+- `GET /health` → `OK`
+- `GET /wards` → JSON array of cleaned ward records (`wardId`, `wing`, `department`,
+  `bedsAvailable`, `notes`)
+
+The CSV is cleaned once at startup. Unusable values become `null` with an explanation in
+`notes` instead of being guessed; duplicate ward ids are merged (earlier row wins, later
+row fills gaps, conflicts are noted).
 
 ## Test
 
-No automated tests yet. Manually verify it's up:
+Run ```mvn test``` for the unit tests. Manually verify it's up:
 
 ```
 curl http://localhost:7030/health   # -> OK
+```
+
+```
+curl http://localhost:7030/wards    # -> 17 cleaned ward records
 ```
 
 To add real tests, add JUnit 5 + the Surefire plugin to `pom.xml`, put tests under
