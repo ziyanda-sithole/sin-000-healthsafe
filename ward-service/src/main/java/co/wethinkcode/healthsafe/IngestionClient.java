@@ -33,7 +33,13 @@ public final class IngestionClient {
     public List<Ward> fetchWards() throws IOException, InterruptedException {
         HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl + "/wards")).timeout(Duration.ofSeconds(5)).GET().build();
 
-        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response;
+        try {
+            response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        } catch (IOException e) {
+            throw new IOException("could not reach ingestion-service at " + baseUrl
+                    + " (" + e.getClass().getSimpleName() + ")", e);
+        }
 
         if (response.statusCode() != 200) {
             throw new IOException("ingestion-service returned HTTP " + response.statusCode());
