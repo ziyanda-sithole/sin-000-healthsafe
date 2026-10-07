@@ -1,10 +1,12 @@
 package co.wethinkcode.healthsafe;
 
 import io.javalin.Javalin;
+import io.javalin.http.Context;
 
 import java.io.IOException;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 
 public class StaffingServiceApp {
 
@@ -23,23 +25,35 @@ public class StaffingServiceApp {
         app.get("/health", ctx -> ctx.result("OK"));
 
         // On-call schedule for a ward: validate the ward, read the level, apply the policy.
-        app.get("/schedule/{id}", ctx -> {
-            String wardId = ctx.pathParam("id").trim().toUpperCase(Locale.ROOT);
-            try {
-                if (!wards.wardExists(wardId)) {
-                    ctx.status(404).json(Map.of("error", "Unknown ward: " + wardId));
-                    return;
-                }
-                int level = alertLevels.currentLevel();
-                ctx.json(StaffingPolicy.scheduleFor(wardId, level));
-            } catch (IOException e) {
-                // A dependency is down or misbehaving: not the caller's fault, not ours either.
-                ctx.status(502).json(Map.of("error", "Cannot build schedule: " + e.getMessage()));
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                ctx.status(503).json(Map.of("error", "Request interrupted"));
+        app.get("/schedule/{id}", ctx ->
+                buildSchedule(ctx, wards, alertLevels).ifPresent(schedule -> ctx.json(schedule)));
+    }
+
+    /**
+     * Builds the schedule for the ward named in the URL.
+     * On success returns it. On any failure it writes the error response itself
+     * (404 unknown ward, 502 dependency problem, 503 interrupted) and returns empty,
+     * so the caller must simply stop.
+     */
+    private static Optional<OnCallSchedule> buildSchedule(
+            Context ctx, WardClient wards, AlertLevelClient alertLevels) {
+        String wardId = ctx.pathParam("id").trim().toUpperCase(Locale.ROOT);
+        try {
+            if (!wards.wardExists(wardId)) {
+                ctx.status(404).json(Map.of("error", "Unknown ward: " + wardId));
+                return Optional.empty();
             }
-        });
+            int level = alertLevels.currentLevel();
+            return Optional.of(StaffingPolicy.scheduleFor(wardId, level));
+        } catch (IOException e) {
+            // A dependency is down or misbehaving: not the caller's fault, not ours either.
+            ctx.status(502).json(Map.of("error", "Cannot build schedule: " + e.getMessage()));
+            return Optional.empty();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            ctx.status(503).json(Map.of("error", "Request interrupted"));
+            return Optional.empty();
+        }
     }
 }
 
