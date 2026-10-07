@@ -1,5 +1,6 @@
 package co.wethinkcode.healthsafe;
 
+import co.wethinkcode.healthsafe.mq.MqConfig;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 
@@ -7,6 +8,7 @@ import java.io.IOException;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import javax.jms.JMSException;
 
 public class StaffingServiceApp {
 
@@ -19,6 +21,9 @@ public class StaffingServiceApp {
     public static void main(String[] args) {
         WardClient wards = new WardClient(WARD_URL);
         AlertLevelClient alertLevels = new AlertLevelClient(ALERT_LEVEL_URL);
+        // Does not connect yet: a connection is opened per publish, so a broker that is
+        // down never stops this service from starting or from serving GET /schedule.
+        ScheduleEventPublisher publisher = new ScheduleEventPublisher(MqConfig.BROKER_URL, MqConfig.TOPIC);
 
         Javalin app = Javalin.create().start(PORT);
 
@@ -27,6 +32,26 @@ public class StaffingServiceApp {
         // On-call schedule for a ward: validate the ward, read the level, apply the policy.
         app.get("/schedule/{id}", ctx ->
                 buildSchedule(ctx, wards, alertLevels).ifPresent(schedule -> ctx.json(schedule)));
+
+        // Same schedule, but also broadcast it on the topic so subscribers (ward-service) hear of it.
+        app.post("/schedule/{id}/publish", ctx -> {
+            Optional<OnCallSchedule> schedule = buildSchedule(ctx, wards, alertLevels);
+            if (schedule.isEmpty()) {
+                return; // buildSchedule already wrote the error response
+            }
+            ScheduleUpdatedEvent event =
+                    ScheduleUpdatedEvent.from(schedule.get(), System.currentTimeMillis());
+            try {
+                publisher.publish(event);
+            } catch (JMSException e) {
+                System.err.println("Could not publish " + event + ": " + e);
+                ctx.status(502).json(Map.of("error",
+                        "Schedule built but not published: could not use the message broker at "
+                                + MqConfig.BROKER_URL));
+                return;
+            }
+            ctx.json(event); // show the caller exactly what was broadcast
+        });
     }
 
     /**
@@ -56,5 +81,3 @@ public class StaffingServiceApp {
         }
     }
 }
-
-// MQ TODO: publishes to ActiveMQ topic MqConfig.TOPIC at MqConfig.BROKER_URL (see co.wethinkcode.healthsafe.mq.MqConfig)
