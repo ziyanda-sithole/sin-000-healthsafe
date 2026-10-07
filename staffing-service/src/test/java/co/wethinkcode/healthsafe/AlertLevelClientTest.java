@@ -1,8 +1,5 @@
 package co.wethinkcode.healthsafe;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -10,6 +7,8 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 class AlertLevelClientTest {
 
@@ -74,7 +73,10 @@ class AlertLevelClientTest {
     }
 
     @Test
-    void unreachableServiceIsAnError() {
-        assertThrows(IOException.class, () -> new AlertLevelClient("http://localhost:1").currentLevel());
+    void unreachableServiceIsAnErrorThatNamesTheService() {
+        IOException error = assertThrows(IOException.class,
+                () -> new AlertLevelClient("http://localhost:1").currentLevel());
+
+        assertTrue(error.getMessage().contains("alert-level-service"), error.getMessage());
     }
 }

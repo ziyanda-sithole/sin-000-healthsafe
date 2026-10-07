@@ -34,7 +34,15 @@ public final class WardClient {
         String safeId = URLEncoder.encode(wardId, StandardCharsets.UTF_8).replace("+", "%20");
         HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl + "/wards/" + safeId)).timeout(Duration.ofSeconds(5)).GET().build();
 
-        HttpResponse<Void> response = http.send(request, HttpResponse.BodyHandlers.discarding());
+        HttpResponse<Void> response;
+        try {
+            response = http.send(request, HttpResponse.BodyHandlers.discarding());
+        } catch (IOException e) {
+            // Java's HttpClient often throws ConnectException with a null message,
+            // so say which service we could not reach, and keep the original as the cause.
+            throw new IOException("could not reach ward-service at " + baseUrl
+                    + " (" + e.getClass().getSimpleName() + ")", e);
+        }
 
         return switch (response.statusCode()) {
             case 200 -> true;

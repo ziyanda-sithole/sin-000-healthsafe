@@ -63,7 +63,10 @@ class WardClientTest {
         // port 1 has nothing listening: we must NOT report "ward does not exist"
         WardClient client = new WardClient("http://localhost:1");
 
-        assertThrows(IOException.class, () -> client.wardExists("W-05"));
+        IOException error = assertThrows(IOException.class, () -> client.wardExists("W-05"));
+
+        assertTrue(error.getMessage().contains("ward-service"), error.getMessage());
+        assertTrue(error.getMessage().contains("http://localhost:1"), error.getMessage());
     }
 
     @Test

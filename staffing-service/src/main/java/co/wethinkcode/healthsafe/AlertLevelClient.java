@@ -31,7 +31,13 @@ public final class AlertLevelClient {
     public int currentLevel() throws IOException, InterruptedException {
         HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl + "/alert-level")).timeout(Duration.ofSeconds(5)).GET().build();
 
-        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response;
+        try {
+            response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        } catch (IOException e) {
+            throw new IOException("could not reach alert-level-service at " + baseUrl
+                    + " (" + e.getClass().getSimpleName() + ")", e);
+        }
 
         if (response.statusCode() != 200) {
             throw new IOException("alert-level-service returned HTTP " + response.statusCode());
