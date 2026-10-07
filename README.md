@@ -203,3 +203,50 @@ curl http://localhost:7030/health   # -> OK
 ```
 
 For an end-to-end check, use `scripts/smoke-test.sh` (see [Verify the core](#verify-the-core)).
+
+## Design decisions and assumptions
+
+These are choices the project README left open. Each is also explained in the relevant
+service's own README.
+
+**Decisions**
+
+- **Services share JSON contracts, not Java classes.** There is no shared module, so `Ward`
+  is deliberately duplicated in `ingestion-service` and `ward-service`. Each side ignores
+  fields it does not know, so one service adding a field does not break another.
+- **Never guess data.** In `ingestion-service`, an untrustworthy value (a bed count of
+  `five`, `-1` or `2023`) becomes `null` with a note explaining why, rather than an invented
+  number. Duplicates are merged with a stated rule and conflicts are recorded.
+- **"No such thing" and "could not find out" are different answers.** `staffing-service`
+  returns `404` when `ward-service` says a ward does not exist, and `502` when a service it
+  depends on is down or misbehaving. A dead dependency is never reported as "not found".
+- **No fallback alert level.** If `alert-level-service` cannot be read, `staffing-service`
+  fails rather than assuming level 0, because under-staffing in a real emergency is the
+  dangerous mistake.
+- **Fail fast at startup.** `ward-service` will not start with an empty ward list, since
+  every valid ward would then look unknown.
+
+**Assumptions to confirm**
+
+- Maximum **100 beds** per ward (`ingestion-service`), so values like `2023` are rejected.
+- Staffing rule **doctors on call = 1 + alert level**, with status bands NORMAL 0-2,
+  ELEVATED 3-5, CRITICAL 6-7, CODE_BLUE 8 (`staffing-service`). Only "8 = Code Blue" comes
+  from the project README.
+- `Paediatrics` is the canonical spelling over `Pediatrics`, because it is the majority
+  spelling in the data.
+
+**Known limitations**
+
+- The alert level is held in memory and **resets to 0 when `alert-level-service` restarts**.
+- A schedule depends only on the alert level; the ward is validated but does not change the
+  headcount, and the result is a number of doctors, not a named roster.
+- The date and boolean cleaning rules from the ingestion README are not implemented, because
+  `wards-outdated.csv` has no date or flag columns.
+- The HTTP endpoints' error mapping is covered by the smoke test and manual checks, not by
+  automated endpoint tests.
+
+**Open question for stage 3.** The text of stage 3 says to replace the call "from
+`ward-service` to `staffing-service`", but the integration table shows `staffing-service`
+*publishing* to `staffing-events-topic` and `ward-service` *subscribing*. The only
+synchronous call that exists today goes the other way (`staffing-service` calls
+`ward-service` to validate a ward). This needs settling before stage 3 is built.
