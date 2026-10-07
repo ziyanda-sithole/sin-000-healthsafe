@@ -1,4 +1,4 @@
-version: "3.8"
+
 services:
   activemq:
     image: apache/activemq-classic:5.18.3
