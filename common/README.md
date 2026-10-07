@@ -17,6 +17,42 @@ Broker URL and topic name are shared via a common `co.wethinkcode.healthsafe.mq.
 tree — each service here is an independent Maven project with no shared parent pom,
 so the common package is duplicated rather than imported from one place.
 
+## Event format
+
+Status: stage 3, in progress. The topic carries JSON text messages. Today there is one
+event type:
+
+```json
+{
+  "type": "ScheduleUpdated",
+  "wardId": "W-05",
+  "alertLevel": 8,
+  "status": "CODE_BLUE",
+  "doctorsOnCall": 9,
+  "issuedAtMillis": 1791360000000
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `type` | Kind of event, always `ScheduleUpdated` for now. Consumers ignore types they do not know |
+| `wardId` | Normalised ward id, e.g. `W-05` |
+| `alertLevel` | Emergency Status (0-8) the schedule was sized from |
+| `status` | Band for that level: `NORMAL`, `ELEVATED`, `CRITICAL` or `CODE_BLUE` |
+| `doctorsOnCall` | Headcount required for the ward |
+| `issuedAtMillis` | When staffing-service issued it, in epoch milliseconds |
+
+Rules both sides follow:
+
+- **Full state, not a change.** Each event describes the ward's whole current schedule, so a
+  subscriber that missed an earlier one is repaired by the next.
+- **Newest wins.** A subscriber keeps only the event with the highest `issuedAtMillis` per ward,
+  so an old event arriving late cannot overwrite a newer one.
+- **Be tolerant when reading.** Ignore fields you do not know and event types you do not handle.
+- **A topic does not remember.** A subscriber that is down when an event is published does not
+  receive it later. That is accepted here because the next event carries the full state; the
+  stage 4 queue is the part of the system that guarantees delivery.
+
 ## Project structure
 
 ```
