@@ -28,8 +28,18 @@ cleanup through synchronous REST calls to asynchronous MQ decoupling and alertin
 Plus [`common/`](common) (no port) — the shared ActiveMQ broker and MQ config notes
 for `staffing-events-topic`: Staffing updates are broadcast as Events via the broker to decouple the frontend from the Staffing Service.
 
-**Status:** scaffold only — build files, Javalin bootstrap, and TODOs are in place; no
-business logic has been implemented yet.
+## Status
+
+| Stage | State |
+|---|---|
+| 1. Ingestion | **Done**: CSV cleaned and served at `GET /wards` |
+| 2. REST services | **Done**: ward, alert-level and staffing services working end to end |
+| 3. MQ decoupling (`staffing-events-topic`) | Not started |
+| 4. Alerting (`equipment-failure-queue`) | Not started |
+
+The required core (stages 1-2) is complete and checked by unit tests plus an end-to-end
+script (see [Verify the core](#verify-the-core)). `equipment-alert-service` and the broker
+in `common/` are still scaffold only.
 
 ## Your task
 
@@ -82,11 +92,13 @@ consume them.
 healthsafe/
 ├── README.md
 ├── .gitignore
+├── scripts/
+│   └── smoke-test.sh           (end-to-end check of stages 1-2)
 ├── ingestion-service/          (port 7030)
 │   ├── pom.xml
 │   ├── README.md
 │   └── src/main/
-│       ├── java/co/wethinkcode/healthsafe/IngestionServiceApp.java
+│       ├── java/co/wethinkcode/healthsafe
 │       └── resources/wards-outdated.csv
 ├── ward-service/          (port 7031)
 ├── alert-level-service/          (port 7032)
@@ -113,7 +125,7 @@ mvn package
 ...or build every module in the repo in one pass from the project root:
 
 ```
-find . -name pom.xml -execdir mvn -q package \;
+find . -name pom.xml -execdir mvn package \;
 ```
 
 ## Run
@@ -145,36 +157,49 @@ cd equipment-alert-service && mvn package && java -jar target/equipment-alert-se
 | StaffingServiceApp (`staffing-service`) | 7033 |
 | EquipmentAlertServiceApp (`equipment-alert-service`) | 7034 |
 
+**For the core (stages 1-2) you only need four services**, started in this order, each
+in its own terminal: `ingestion-service`, `ward-service`, `alert-level-service`,
+`staffing-service`. The broker in `common/` and `equipment-alert-service` are only for
+stages 3-4. `ward-service` retries `ingestion-service` for about 10 seconds at startup, so
+a slightly wrong order is forgiven; if ingestion never answers, `ward-service` exits with
+a clear message instead of running with an empty list.
+
+## Verify the core
+
+With the four services running:
+
+```
+bash scripts/smoke-test.sh
+```
+
+It runs 15 checks across the services and ends with `15 passed, 0 failed`. Any failure prints
+what was expected and what came back. `HTTP 000` means that service is not running.
+
+> The script temporarily raises the alert level to 8 (to prove the staffing schedule reacts)
+> and sets it back to 0 at the end.
+
 ## Test
 
-No automated tests exist yet (this is a scaffold). Each running service exposes
-`/health`, so sanity-check manually:
+`ingestion-service`, `ward-service`, `alert-level-service` and `staffing-service` have
+JUnit 5 unit tests. The HTTP clients are tested against fake servers built on the JDK's
+own HTTP server, so no other service needs to be running. Run one module:
+
+```
+cd ward-service
+mvn test
+```
+
+...or every module at once from the project root:
+
+```
+find . -name pom.xml -execdir mvn -q test \;
+```
+
+`equipment-alert-service` has no tests yet (stage 4). Each running service also exposes
+`/health`:
 
 ```
 curl http://localhost:7030/health   # -> OK
 ```
 
-To add real tests to a module, add JUnit 5 and Surefire to its `pom.xml`:
-
-```xml
-<dependency>
-  <groupId>org.junit.jupiter</groupId>
-  <artifactId>junit-jupiter</artifactId>
-  <version>5.10.2</version>
-  <scope>test</scope>
-</dependency>
-```
-
-```xml
-<plugin>
-  <groupId>org.apache.maven.plugins</groupId>
-  <artifactId>maven-surefire-plugin</artifactId>
-  <version>3.2.5</version>
-</plugin>
-```
-
-then add tests under that module's `src/test/java/...` and run:
-
-```
-mvn test
-```
+For an end-to-end check, use `scripts/smoke-test.sh` (see [Verify the core](#verify-the-core)).
