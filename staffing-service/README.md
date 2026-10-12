@@ -7,8 +7,7 @@ Provides on-call schedules for doctors based on ward and status.
 Part of the [HealthSafe](../README.md) project. Independent Maven module, no
 parent pom.
 
-MQ: **planned (stage 3), not implemented yet.** This service will publish to the ActiveMQ topic `staffing-events-topic` — see [`../common/`](../common). Broker URL and topic name come from the common `co.wethinkcode.healthsafe.mq.MqConfig` class alongside it in this module.
-
+MQ: publishes a `ScheduleUpdated` event to the ActiveMQ topic `staffing-events-topic` when `POST /schedule/{id}/publish` is called (**stage 3, implemented**) — see [`../common/`](../common) for the event format. A connection is opened per publish, so the broker is optional: if it is down the service still starts and `GET /schedule/{id}` still works, and only the publish endpoint fails.
 REST: calls `ward-service` (`../ward-service`) to validate the ward and
 `alert-level-service` (`../alert-level-service`) to read the current Emergency
 Status before computing a schedule — see [Integration contracts](../README.md#integration-contracts)
@@ -58,11 +57,17 @@ staffing-service/
     │   ├── OnCallSchedule.java       (the response record)
     │   ├── WardClient.java           (HTTP client for ward-service)
     │   ├── AlertLevelClient.java     (HTTP client for alert-level-service)
+    │   ├── ScheduleUpdatedEvent.java
+    │   ├── ScheduleEventCodec.java
+    │   ├── ScheduleEventPublisher.java
     │   └── mq/
     │       └── MqConfig.java
     └── test/java/co/wethinkcode/healthsafe/
         ├── StaffingPolicyTest.java
         ├── WardClientTest.java
+        ├── ScheduleUpdatedEventTest.java
+        ├── ScheduleEventCodecTest.java
+        ├── ScheduleEventPublisherTest.java
         └── AlertLevelClientTest.java
 ```
 
@@ -88,6 +93,7 @@ Listens on port `7033`.
 |---|---|---|
 | GET | `/health` | `OK` |
 | GET | `/schedule/{id}` | `200` `{"wardId", "alertLevel", "status", "doctorsOnCall"}` |
+| POST | `/schedule/{id}/publish` | Builds the same schedule as the GET, broadcasts it on the topic and returns the event (`type`, `wardId`, `alertLevel`, `status`, `doctorsOnCall`, `issuedAtMillis`). `404` unknown ward; `502` if a dependency, or the broker, cannot be used |
 
 Example: `GET /schedule/w-05` at level 8 returns
 
@@ -132,8 +138,7 @@ returns `502`, not `404`.
 - **`doctorsOnCall` is a headcount, not a named roster.** There is no doctor data in the
   project, so the service does not say *who* is on call.
 - **The staffing rule is an assumption** (see above).
-- **No automated test covers the endpoint's error mapping** (404/502/503). The rule and both
-  clients are unit tested; the error mapping is checked by hand and, for 404, by the smoke test.
+- **The endpoints' error mapping (404/502/503) is covered by the smoke test and manual checks, not by automated endpoint tests.
 
 ## Test
 

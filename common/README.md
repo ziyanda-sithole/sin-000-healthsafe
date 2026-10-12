@@ -19,7 +19,7 @@ so the common package is duplicated rather than imported from one place.
 
 ## Event format
 
-Status: stage 3, in progress. The topic carries JSON text messages. Today there is one
+Status: stage 3, implemented (stage 4's queue is described in the equipment-alert-service README). The topic carries JSON text messages. Today there is one
 event type:
 
 ```json
