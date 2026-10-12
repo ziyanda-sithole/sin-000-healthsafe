@@ -37,6 +37,18 @@ public class WardServiceApp {
                     () -> ctx.status(404).json(Map.of("error", "Unknown ward: " + id)));
         });
 
+        // Latest staffing update received over the topic for this ward.
+        app.get("/wards/{id}/staffing", ctx -> {
+            String id = ctx.pathParam("id");
+            if (repository.findById(id).isEmpty()) {
+                ctx.status(404).json(Map.of("error", "Unknown ward: " + id));
+                return;
+            }
+            staffing.find(id).ifPresentOrElse(
+                    event -> ctx.json(WardStaffing.from(event)),
+                    () -> ctx.status(404).json(Map.of("error", "No staffing update received yet for ward: " + id)));
+        });
+
         app.get("/departments", ctx -> ctx.json(repository.departments()));
     }
 
