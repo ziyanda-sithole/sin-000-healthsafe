@@ -1,5 +1,6 @@
 package co.wethinkcode.healthsafe;
 
+import co.wethinkcode.healthsafe.mq.MqConfig;
 import io.javalin.Javalin;
 
 import java.io.IOException;
@@ -17,6 +18,10 @@ public class WardServiceApp {
     public static void main(String[] args) throws InterruptedException {
         WardRepository repository = new WardRepository(loadWards());
         System.out.println("Loaded " + repository.findAll().size() + " wards from " + INGESTION_URL);
+        // Listens for staffing updates in the background. If the broker is down the service
+        // still starts and serves wards; the subscription connects as soon as the broker is up.
+        StaffingStore staffing = new StaffingStore();
+        new StaffingEventSubscriber(MqConfig.BROKER_URL, MqConfig.TOPIC, staffing, 5000).start();
 
         Javalin app = Javalin.create().start(PORT);
 
@@ -35,7 +40,7 @@ public class WardServiceApp {
         app.get("/departments", ctx -> ctx.json(repository.departments()));
     }
 
-    /** ingestion-service may still be starting, so retry a few times before giving up. */
+    // ingestion-service may still be starting, so retry a few times before giving up.
     private static List<Ward> loadWards() throws InterruptedException {
         IngestionClient client = new IngestionClient(INGESTION_URL);
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
