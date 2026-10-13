@@ -4,8 +4,11 @@ import co.wethinkcode.healthsafe.mq.MqConfig;
 import io.javalin.Javalin;
 
 import java.io.IOException;
+import javax.jms.JMSException;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 
 public class WardServiceApp {
 
@@ -15,6 +18,10 @@ public class WardServiceApp {
     private static final int MAX_ATTEMPTS = 5;
     private static final long RETRY_DELAY_MS = 2000;
 
+    // Body of POST /wards/{id}/equipment-failure, e.g. {"equipment":"ventilator","details":"no airflow"}.
+    record EquipmentFailureReport(String equipment, String details) {
+    }
+
     public static void main(String[] args) throws InterruptedException {
         WardRepository repository = new WardRepository(loadWards());
         System.out.println("Loaded " + repository.findAll().size() + " wards from " + INGESTION_URL);
@@ -22,6 +29,11 @@ public class WardServiceApp {
         // still starts and serves wards; the subscription connects as soon as the broker is up.
         StaffingStore staffing = new StaffingStore();
         new StaffingEventSubscriber(MqConfig.BROKER_URL, MqConfig.TOPIC, staffing, 5000).start();
+
+        // Does not connect yet: a connection is opened per alert, so a broker that is down
+        // never stops this service from starting or from serving wards.
+        EquipmentAlertPublisher alertPublisher =
+                new EquipmentAlertPublisher(MqConfig.BROKER_URL, MqConfig.QUEUE);
 
         Javalin app = Javalin.create().start(PORT);
 
@@ -49,6 +61,44 @@ public class WardServiceApp {
                     () -> ctx.status(404).json(Map.of("error", "No staffing update received yet for ward: " + id)));
         });
 
+        // Report a critical equipment failure: queued for equipment-alert-service, which is
+        // guaranteed to get it (see equipment-alert-service/README.md).
+        app.post("/wards/{id}/equipment-failure", ctx -> {
+            String id = ctx.pathParam("id");
+            Optional<Ward> ward = repository.findById(id);
+            if (ward.isEmpty()) {
+                ctx.status(404).json(Map.of("error", "Unknown ward: " + id));
+                return;
+            }
+            EquipmentFailureReport report;
+            try {
+                report = ctx.bodyAsClass(EquipmentFailureReport.class);
+            } catch (Exception e) {
+                ctx.status(400).json(Map.of("error",
+                        "body must be JSON like {\"equipment\": \"ventilator\", \"details\": \"no airflow\"}"));
+                return;
+            }
+            if (report.equipment() == null || report.equipment().isBlank()) {
+                ctx.status(400).json(Map.of("error", "body must contain a non-empty 'equipment'"));
+                return;
+            }
+            EquipmentFailureAlert alert = new EquipmentFailureAlert(
+                    UUID.randomUUID().toString(),
+                    ward.get().wardId(),
+                    report.equipment().trim(),
+                    report.details() == null || report.details().isBlank() ? null : report.details().trim(),
+                    System.currentTimeMillis());
+            try {
+                alertPublisher.publish(alert);
+            } catch (JMSException e) {
+                System.err.println("Could not queue " + alert + ": " + e);
+                ctx.status(502).json(Map.of("error", "Alert NOT sent: could not use the message broker at "
+                        + MqConfig.BROKER_URL + ". Report the failure another way."));
+                return;
+            }
+            ctx.status(202).json(alert); // accepted for processing, not yet processed
+        });
+
         app.get("/departments", ctx -> ctx.json(repository.departments()));
     }
 
@@ -70,6 +120,3 @@ public class WardServiceApp {
                 "Could not load wards from " + INGESTION_URL + " - is ingestion-service running?");
     }
 }
-
-// MQ TODO: subscribes to ActiveMQ topic MqConfig.TOPIC at MqConfig.BROKER_URL (see co.wethinkcode.healthsafe.mq.MqConfig)
-// MQ TODO: publishes to ActiveMQ queue MqConfig.QUEUE when it detects an equipment failure on one of its wards.
