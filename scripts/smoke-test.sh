@@ -2,8 +2,9 @@
 # End-to-end smoke test for HealthSafe.
 #
 #   bash scripts/smoke-test.sh             core (stages 1-2): needs the four REST services
-#   bash scripts/smoke-test.sh --with-mq   also stage 3 (topic): needs the ActiveMQ broker too
-#
+#   bash scripts/smoke-test.sh --with-mq   also stages 3 and 4 (topic and queue): needs the ActiveMQ
+#                                          broker AND equipment-alert-service (7034) running
+
 # Start the services first, each in its own terminal, in this order:
 #   ingestion-service (7030), ward-service (7031),
 #   alert-level-service (7032), staffing-service (7033)
@@ -22,6 +23,7 @@ INGESTION=${INGESTION_URL:-http://localhost:7030}
 WARD=${WARD_URL:-http://localhost:7031}
 ALERT=${ALERT_LEVEL_URL:-http://localhost:7032}
 STAFFING=${STAFFING_URL:-http://localhost:7033}
+EQUIPMENT=${EQUIPMENT_ALERT_URL:-http://localhost:7034}
 MQ_WAIT_SECONDS=${MQ_WAIT_SECONDS:-10}   # how long to wait for asynchronous messages to arrive
 
 pass=0
@@ -137,6 +139,26 @@ if [[ $WITH_MQ -eq 1 ]]; then
   check "publishing for an unknown ward is 404" 404 "Unknown ward" -X POST "$STAFFING/schedule/W-99/publish"
   check "staffing for an unknown ward is 404"   404 "Unknown ward" "$WARD/wards/W-99/staffing"
   put_level 0
+
+  echo "== stage 4: equipment failure alerts over the queue =="
+  check "equipment-alert-service up" 200 "OK" "$EQUIPMENT/health"
+  # A unique marker, so we can tell THIS report from alerts left by earlier runs.
+  marker="smoke-$(date +%s)-$RANDOM"
+  fetch -X POST -H "Content-Type: application/json" -d "{\"equipment\":\"$marker\",\"details\":\"smoke test\"}" "$WARD/wards/w-05/equipment-failure"
+  if matches 202 "\"equipment\":\"$marker\""; then
+    ok "equipment failure accepted (202)"
+  else
+    bad "equipment failure accepted (202)" 202 "\"equipment\":\"$marker\""
+  fi
+  alert_id=$(sed -n 's/.*"alertId":"\([^"]*\)".*/\1/p' <<< "$body")
+  if [[ -n "$alert_id" ]]; then
+    check_eventually "equipment-alert-service processed that alert" "$MQ_WAIT_SECONDS" 200 "\"alertId\":\"$alert_id\"" "$EQUIPMENT/alerts"
+  else
+    bad "equipment-alert-service processed that alert (no alertId to look for)" 200 "\"alertId\":<id>"
+  fi
+  check "equipment failure for an unknown ward is 404" 404 "Unknown ward" -X POST -H "Content-Type: application/json" -d '{"equipment":"x"}' "$WARD/wards/W-99/equipment-failure"
+  check "equipment failure without equipment is 400"   400 "equipment" -X POST -H "Content-Type: application/json" -d '{}' "$WARD/wards/W-05/equipment-failure"
+  check "equipment failure with a malformed body is 400" 400 "error" -X POST -H "Content-Type: application/json" -d 'not json' "$WARD/wards/W-05/equipment-failure"
 fi
 
 echo
