@@ -34,12 +34,13 @@ for `staffing-events-topic`: Staffing updates are broadcast as Events via the br
 |---|---|
 | 1. Ingestion | **Done**: CSV cleaned and served at `GET /wards` |
 | 2. REST services | **Done**: ward, alert-level and staffing services working end to end |
-| 3. MQ decoupling (`staffing-events-topic`) | Not started |
-| 4. Alerting (`equipment-failure-queue`) | Not started |
+| 3. MQ decoupling (`staffing-events-topic`) | **Done**: staffing publishes, ward-service subscribes and serves `GET /wards/{id}/staffing` |
+| 4. Alerting (`equipment-failure-queue`) | **Done**: ward-service queues alerts, equipment-alert-service consumes them with guaranteed delivery |
 
-The required core (stages 1-2) is complete and checked by unit tests plus an end-to-end
-script (see [Verify the core](#verify-the-core)). `equipment-alert-service` and the broker
-in `common/` are still scaffold only.
+All four stages are implemented. They are checked by unit tests in every module plus an
+end-to-end script (see [Verify](#verify-the-core)). The stage 3 and 4 features need the broker
+in `common/`, but none of them is needed by the core: with the broker down, every service still
+starts and the stage 1-2 endpoints still work.
 
 ## Your task
 
@@ -159,10 +160,10 @@ cd equipment-alert-service && mvn package && java -jar target/equipment-alert-se
 
 **For the core (stages 1-2) you only need four services**, started in this order, each
 in its own terminal: `ingestion-service`, `ward-service`, `alert-level-service`,
-`staffing-service`. The broker in `common/` and `equipment-alert-service` are only for
-stages 3-4. `ward-service` retries `ingestion-service` for about 10 seconds at startup, so
-a slightly wrong order is forgiven; if ingestion never answers, `ward-service` exits with
-a clear message instead of running with an empty list.
+`staffing-service`. Stages 3 and 4 also need the broker (`docker-compose up -d` inside
+`common/`) and `equipment-alert-service`. `ward-service` retries `ingestion-service` for about
+10 seconds at startup, so a slightly wrong order is forgiven; if ingestion never answers,
+`ward-service` exits with a clear message instead of running with an empty list.
 
 ## Verify the core
 
@@ -177,6 +178,16 @@ what was expected and what came back. `HTTP 000` means that service is not runni
 
 > The script temporarily raises the alert level to 8 (to prove the staffing schedule reacts)
 > and sets it back to 0 at the end.
+
+With the broker and all five services running, include stages 3 and 4:
+
+```
+bash scripts/smoke-test.sh --with-mq
+```
+
+It ends with `26 passed, 0 failed`. The asynchronous checks wait up to 10 seconds
+(`MQ_WAIT_SECONDS`) for a message to arrive, and match the exact event or alert they just sent,
+so leftovers from earlier runs cannot make them pass.
 
 ## Test
 
@@ -195,7 +206,7 @@ mvn test
 find . -name pom.xml -execdir mvn -q test \;
 ```
 
-`equipment-alert-service` has no tests yet (stage 4). Each running service also exposes
+All five modules have unit tests. The tests that need a broker start one inside the test, so Docker is not needed for `mvn test`. Each running service also exposes
 `/health`:
 
 ```
@@ -225,6 +236,13 @@ service's own README.
   dangerous mistake.
 - **Fail fast at startup.** `ward-service` will not start with an empty ward list, since
   every valid ward would then look unknown.
+- **Stage 3 and 4 never break the core.** Publishers connect per message and subscribers connect on a
+  background thread with retry, so a missing broker only disables the features that need it.
+- **Topic versus queue.** The topic broadcasts staffing state and may drop a message for a
+  subscriber that was offline, which is fine because each event carries the full state and the
+  newest wins. The queue is used where loss is unacceptable: persistent messages, a transacted
+  consumer that commits only after processing, a dead-letter queue, and ids to recognise duplicates.
+- **A critical alert is never reported as sent unless the broker took it** (`502`, "Alert NOT sent").
 
 **Assumptions to confirm**
 
@@ -244,9 +262,15 @@ service's own README.
   `wards-outdated.csv` has no date or flag columns.
 - The HTTP endpoints' error mapping is covered by the smoke test and manual checks, not by
   automated endpoint tests.
+- Equipment alerts have no local outbox: if the broker is down when a failure is reported, it is not
+  stored and the caller must retry.
+- `equipment-alert-service` keeps processed alerts in memory only, and nothing consumes the dead-letter queue.
+- Staffing updates are held in memory in ward-service and are lost on restart until the next publish.
 
-**Open question for stage 3.** The text of stage 3 says to replace the call "from
-`ward-service` to `staffing-service`", but the integration table shows `staffing-service`
-*publishing* to `staffing-events-topic` and `ward-service` *subscribing*. The only
-synchronous call that exists today goes the other way (`staffing-service` calls
-`ward-service` to validate a ward). This needs settling before stage 3 is built.
+**Stage 3, how it was read.** The root README says to replace the call "from `ward-service` to
+`staffing-service`", but no such call exists: the only HTTP call between them goes the other way,
+and the integration table, `common/README.md` and both service READMEs agree that
+`staffing-service` publishes and `ward-service` subscribes. So the topic was built as a new
+broadcast **in addition to** the validation call, which stays HTTP because a topic cannot answer
+"does this ward exist?". Staffing publishes only from an explicit `POST /schedule/{id}/publish`
+(a state-changing action), never from a read.
