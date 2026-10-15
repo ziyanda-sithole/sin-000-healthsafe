@@ -89,12 +89,15 @@ from their own directories at the project root).
 docker compose ps          # confirm the broker container is healthy
 ```
 
-Once the TODOs below are implemented, verify end-to-end by publishing a message from
-`staffing-service` and confirming the consumer(s) receive it — e.g. via logs, or by
-watching the topic in the web console.
+To verify end to end, run `bash scripts/verify-all.sh` from the project root, or watch the topic and
+queue in the web console (`http://localhost:8161/admin`, admin / admin) while publishing with
+`POST /schedule/{id}/publish` on `staffing-service` or `POST /wards/{id}/equipment-failure` on
+`ward-service`.
 
-## TODO
+## Status
 
-- Add `activemq-client` publish logic to `staffing-service` on its stage/state-change endpoint.
-- Add `activemq-client` subscriber logic to consumer service(s) above, replacing any
-  direct synchronous calls to `staffing-service`.
+Implemented. `staffing-service` publishes to `staffing-events-topic` and `ward-service` subscribes
+(stage 3); `ward-service` publishes to `equipment-failure-queue` and `equipment-alert-service`
+consumes it (stage 4). The "stage/state-change endpoint" is `POST /schedule/{id}/publish`. No direct
+synchronous call to `staffing-service` existed to replace (see "Stage 3, how it was read" in the
+root README), so the topic was added alongside the existing validation call.
