@@ -25,6 +25,10 @@ public final class FieldNormalizer {
             "paediatrics", "Paediatrics",
             "icu", "ICU");
 
+    /**
+     * A ward with more beds than this is almost certainly a typo (e.g. 2023 looks like a year).
+     * ASSUMPTION: 100 is my own limit - confirm it against the real hospital.
+     */
     static final int MAX_REALISTIC_BEDS = 100;
 
     private FieldNormalizer() {

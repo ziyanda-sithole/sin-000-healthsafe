@@ -3,7 +3,9 @@ package co.wethinkcode.healthsafe;
 /**
  * The business rule: how many doctors a ward needs for a given Emergency Status.
 
- * doctors on call = 1 + alert level      (level 0 -> 1 doctor, level 8 -> 9 doctors)
+ * ASSUMPTION - the project README gives no formula, so this is my own rule and
+ * should be confirmed with the hospital:
+ *   doctors on call = 1 + alert level      (level 0 -> 1 doctor, level 8 -> 9 doctors)
  * Kept in its own class so the rule can change without touching the HTTP code.
  */
 public final class StaffingPolicy {
