@@ -189,6 +189,10 @@ It ends with `26 passed, 0 failed`. The asynchronous checks wait up to 10 second
 (`MQ_WAIT_SECONDS`) for a message to arrive, and match the exact event or alert they just sent,
 so leftovers from earlier runs cannot make them pass.
 
+To do everything in one command (unit tests, build, start the broker and all five services, run the
+smoke test, stop the services again), use `bash scripts/verify-all.sh`. Add `--resilience` to also
+stop and restart the broker. Service output is kept in `logs/` (ignored by git).
+
 ## Test
 
 `ingestion-service`, `ward-service`, `alert-level-service` and `staffing-service` have
