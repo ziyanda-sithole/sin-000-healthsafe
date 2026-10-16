@@ -304,3 +304,9 @@ and the integration table, `common/README.md` and both service READMEs agree tha
 broadcast **in addition to** the validation call, which stays HTTP because a topic cannot answer
 "does this ward exist?". Staffing publishes only from an explicit `POST /schedule/{id}/publish`
 (a state-changing action), never from a read.
+
+
+
+Verification Code:
+
+WTC-EQ45JKXW
