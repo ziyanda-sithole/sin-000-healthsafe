@@ -100,10 +100,18 @@ if [[ $SKIP_TESTS -eq 0 ]]; then
   total=0
   for m in "${MODULES[@]}"; do
     log="$LOGS/$m-test.log"
-    if (cd "$ROOT/$m" && mvn test > "$log" 2>&1); then
-      n=$(grep -E "Tests run: [0-9]+, Failures: [0-9]+, Errors: [0-9]+, Skipped: [0-9]+$" "$log" | tail -1 | sed -E 's/.*Tests run: ([0-9]+),.*/\1/')
-      echo "PASS  $m: ${n:-0} tests"
-      total=$((total + ${n:-0}))
+    # -B (batch mode) switches off Maven's colour codes. The sed below also strips any that remain,
+    # and carriage returns, which would otherwise hide the "Tests run" summary line from grep.
+    if (cd "$ROOT/$m" && mvn -B test > "$log" 2>&1); then
+      n=$(sed -E "s/$(printf '\033')\[[0-9;]*m//g; s/\r//g" "$log" \
+          | grep -E "Tests run: [0-9]+, Failures: [0-9]+, Errors: [0-9]+, Skipped: [0-9]+" \
+          | grep -v "Time elapsed" | tail -1 | sed -E 's/.*Tests run: ([0-9]+),.*/\1/')
+      if [[ -n "$n" ]]; then
+        echo "PASS  $m: $n tests"
+        total=$((total + n))
+      else
+        echo "PASS  $m: passed (could not read the test count; see $log)"
+      fi
     else
       echo "FAIL  $m (full output: $log)"
       grep -E "Tests run:.*(FAIL|ERROR)|\[ERROR\]" "$log" | head -15
@@ -117,7 +125,7 @@ fi
 
 step "4. build the jars"
 for m in "${MODULES[@]}"; do
-  if ! (cd "$ROOT/$m" && mvn -q package -DskipTests > "$LOGS/$m-build.log" 2>&1); then
+  if ! (cd "$ROOT/$m" && mvn -B -q package -DskipTests > "$LOGS/$m-build.log" 2>&1); then
     tail -20 "$LOGS/$m-build.log"
     die "build failed in $m (full output: $LOGS/$m-build.log)"
   fi
