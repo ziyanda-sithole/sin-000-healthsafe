@@ -131,22 +131,23 @@ find . -name pom.xml -execdir mvn package \;
 
 ## Run
 
+The quickest way, which starts the broker and all five services and leaves them running:
+
 ```
-# ingestion
-cd ingestion-service && mvn package && java -jar target/ingestion-service.jar
+bash scripts/start-all.sh
+```
 
-# domain services, each in its own terminal
-# terminal 1
-cd ward-service && mvn package && java -jar target/ward-service.jar
-# terminal 2
-cd alert-level-service && mvn package && java -jar target/alert-level-service.jar
-# terminal 3
-cd staffing-service && mvn package && java -jar target/staffing-service.jar
+...or by hand: start the broker first (stages 3 and 4 only), then each service in its own terminal.
 
-# MQ broker (needed once the MQ-aware services above are wired up)
+```
+# broker
 cd common && docker compose up -d
 
-# alerting
+# each of these in its own terminal, in this order
+cd ingestion-service && mvn package && java -jar target/ingestion-service.jar
+cd ward-service && mvn package && java -jar target/ward-service.jar
+cd alert-level-service && mvn package && java -jar target/alert-level-service.jar
+cd staffing-service && mvn package && java -jar target/staffing-service.jar
 cd equipment-alert-service && mvn package && java -jar target/equipment-alert-service.jar
 ```
 
@@ -164,6 +165,31 @@ in its own terminal: `ingestion-service`, `ward-service`, `alert-level-service`,
 `common/`) and `equipment-alert-service`. `ward-service` retries `ingestion-service` for about
 10 seconds at startup, so a slightly wrong order is forgiven; if ingestion never answers,
 `ward-service` exits with a clear message instead of running with an empty list.
+
+## Try it in a browser
+
+There is no web page: every service is a REST API that answers with JSON. A browser can show the
+read-only (`GET`) endpoints, for example:
+
+| URL | Shows |
+|---|---|
+| `http://localhost:7030/wards` | the cleaned ward list |
+| `http://localhost:7031/wards/W-05` | one ward (the id ignores case) |
+| `http://localhost:7031/wards/W-05/staffing` | the latest staffing update received over the topic |
+| `http://localhost:7032/alert-level` | the hospital Emergency Status (0-8) |
+| `http://localhost:7033/schedule/W-05` | the on-call schedule for a ward |
+| `http://localhost:7034/alerts` | equipment alerts processed so far |
+| `http://localhost:8161/admin` | the ActiveMQ console (admin / admin) |
+
+A browser cannot send `PUT` or `POST`, so use `curl` to change things:
+
+```
+curl -X PUT  -H "Content-Type: application/json" -d '{"level":8}' http://localhost:7032/alert-level
+curl -X POST http://localhost:7033/schedule/W-05/publish
+curl -X POST -H "Content-Type: application/json" \
+     -d '{"equipment":"ventilator","details":"no airflow"}' \
+     http://localhost:7031/wards/W-05/equipment-failure
+```
 
 ## Verify the core
 
